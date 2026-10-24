@@ -6,9 +6,24 @@ import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { TokenUsageRecorderProjection } from '../types.ts'
 
 /** Sampling cadence shared by the header and sidebar indicators. */
-export const THROUGHPUT_SAMPLE_INTERVAL_MS = 5_000
-/** Rolling observation window used to smooth bursty provider usage updates. */
-export const THROUGHPUT_WINDOW_MS = 10_000
+export const THROUGHPUT_SAMPLE_INTERVAL_MS = 1_000
+/**
+ * Rolling observation window. A settled attempt delivers its whole output count
+ * in one step, so the window has to be long enough to hold several settlements
+ * and short enough to still react to a rate collapse.
+ */
+export const THROUGHPUT_WINDOW_MS = 30_000
+/** Exponential time constant applied on top of the windowed average. */
+export const THROUGHPUT_SMOOTHING_TAU_MS = 5_000
+/**
+ * Floor for the averaging span. A settled attempt hands over its whole output
+ * count at one instant, so dividing by a very short span would publish the lump
+ * itself as a rate; the first seconds of a session therefore average over this
+ * span instead of over a single sampling step.
+ */
+export const THROUGHPUT_MIN_SPAN_MS = 10_000
+/** A session counts as recently active above this published rate. */
+const ACTIVE_RATE_FLOOR = 0.5
 
 /** One immutable confirmed-output reading shared across every browser surface. */
 export interface TokenThroughputSnapshot {
@@ -60,6 +75,18 @@ function outputCounter(summary: SessionSummary): RawOutputCounter | undefined {
   )
 }
 
+/**
+ * Blend one windowed rate into its predecessor with a time-aware exponential
+ * average: the published number is an average, so a lump-sum settlement must not
+ * become a spike. `previous === undefined` (first sample, restart, source switch)
+ * adopts the raw value verbatim.
+ */
+export function smoothRate(previous: number | undefined, raw: number, elapsedMs: number): number {
+  if (previous === undefined || elapsedMs <= 0) return raw
+  const alpha = 1 - Math.exp(-elapsedMs / THROUGHPUT_SMOOTHING_TAU_MS)
+  return previous + alpha * (raw - previous)
+}
+
 /** Format a compact Token-per-second value without implying integer precision below ten. */
 export function formatTokensPerSecond(value: number): string {
   const clamped = Math.max(0, value)
@@ -80,6 +107,8 @@ export class TokenThroughputController implements ObservableSnapshot<TokenThroug
   private snapshot: TokenThroughputSnapshot = EMPTY_SNAPSHOT
   private readonly listeners = new Set<() => void>()
   private samples: ThroughputSample[] = []
+  private readonly smoothed = new Map<string, number>()
+  private lastSampleAt: number | undefined
   private readonly epochs = new Map<string, number>()
   private previousCounters = new Map<string, RawOutputCounter>()
   private readonly scopedCounters = new Map<string, RawOutputCounter>()
@@ -104,6 +133,8 @@ export class TokenThroughputController implements ObservableSnapshot<TokenThroug
       if (this.timer !== undefined) clearInterval(this.timer)
       this.timer = undefined
       this.samples = []
+      this.smoothed.clear()
+      this.lastSampleAt = undefined
       this.epochs.clear()
       this.previousCounters.clear()
       this.scopedCounters.clear()
@@ -180,8 +211,8 @@ export class TokenThroughputController implements ObservableSnapshot<TokenThroug
     const retainedAfter = at - THROUGHPUT_WINDOW_MS
     this.samples = this.samples.filter(sample => sample.at >= retainedAfter)
 
-    const bySession: Record<string, number> = {}
     const statusBySession: Record<string, 'sampling' | 'ready'> = {}
+    const windowed: Record<string, number> = {}
     let ready = false
     for (const [sessionId, counter] of current) {
       const valid = this.samples.filter(sample => {
@@ -193,14 +224,14 @@ export class TokenThroughputController implements ObservableSnapshot<TokenThroug
           && previous.tokens <= counter.tokens
       })
       if (valid.length === 0) {
-        bySession[sessionId] = 0
+        windowed[sessionId] = 0
         statusBySession[sessionId] = 'sampling'
         continue
       }
       const target = at - THROUGHPUT_WINDOW_MS
       const baseline = valid.find(sample => sample.at >= target)
       if (baseline === undefined) {
-        bySession[sessionId] = 0
+        windowed[sessionId] = 0
         statusBySession[sessionId] = 'sampling'
         continue
       }
@@ -208,10 +239,32 @@ export class TokenThroughputController implements ObservableSnapshot<TokenThroug
       statusBySession[sessionId] = 'ready'
       const previous = baseline?.countersBySession.get(sessionId)
       const elapsedSeconds = (at - baseline.at) / 1_000
-      bySession[sessionId] = previous === undefined || elapsedSeconds <= 0
+      windowed[sessionId] = previous === undefined || elapsedSeconds <= 0
         ? 0
-        : Math.max(0, counter.tokens - previous.tokens) / elapsedSeconds
+        : Math.max(0, counter.tokens - previous.tokens)
+          / Math.max(elapsedSeconds, THROUGHPUT_MIN_SPAN_MS / 1_000)
     }
+
+    // Publish the smoothed rate: the window average already bounds a lump, and
+    // the exponential blend removes the step edges between adjacent samples.
+    const elapsedMs = this.lastSampleAt === undefined ? 0 : at - this.lastSampleAt
+    const bySession: Record<string, number> = {}
+    for (const sessionId of current.keys()) {
+      if (statusBySession[sessionId] !== 'ready') {
+        // No comparable baseline: forget the blend so the next ready sample
+        // re-seeds from its own window instead of inheriting a dead rate.
+        this.smoothed.delete(sessionId)
+        bySession[sessionId] = 0
+        continue
+      }
+      const value = smoothRate(this.smoothed.get(sessionId), windowed[sessionId] ?? 0, elapsedMs)
+      this.smoothed.set(sessionId, value)
+      bySession[sessionId] = value
+    }
+    for (const sessionId of [...this.smoothed.keys()]) {
+      if (!current.has(sessionId)) this.smoothed.delete(sessionId)
+    }
+    this.lastSampleAt = at
 
     const rates = Object.values(bySession)
     const hasPriorSample = this.samples.some(sample => sample.at < at)
@@ -228,7 +281,7 @@ export class TokenThroughputController implements ObservableSnapshot<TokenThroug
         ? (hasPriorSample ? 'ready' : 'sampling')
         : (ready && everyCurrentReady ? 'ready' : 'sampling'),
       allTokensPerSecond: rates.reduce((sum, rate) => sum + rate, 0),
-      activeSessions: rates.filter(rate => rate > 0).length,
+      activeSessions: rates.filter(rate => rate >= ACTIVE_RATE_FLOOR).length,
       bySession: Object.freeze(bySession),
       statusBySession: Object.freeze(statusBySession),
     })

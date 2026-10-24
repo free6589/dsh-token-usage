@@ -44,10 +44,10 @@ describe('Token throughput indicators', () => {
       t,
     } as unknown as ComponentProps<typeof CurrentSessionThroughput>} />)
 
-    expect(screen.getByText('当前会话')).toBeTruthy()
+    expect(screen.getByText('当前会话均值')).toBeTruthy()
     expect(screen.getByText('12')).toBeTruthy()
     expect(screen.getByText('tok/s')).toBeTruthy()
-    expect(screen.getByLabelText(/最近最多 10 秒已确认输出 12 tok\/s/)).toBeTruthy()
+    expect(screen.getByLabelText(/近 30 秒结算均值 12 tok\/s（非瞬时速度）/)).toBeTruthy()
   })
 
   it('shows aggregate throughput and active-session count at the wide sidebar foot', () => {
@@ -65,10 +65,10 @@ describe('Token throughput indicators', () => {
       t,
     } as unknown as ComponentProps<typeof AllSessionsThroughput>} />)
 
-    expect(screen.getByText('全部会话速率')).toBeTruthy()
+    expect(screen.getByText('全部会话均值')).toBeTruthy()
     expect(screen.getByText('21')).toBeTruthy()
     expect(screen.getByText('2 近期入账')).toBeTruthy()
-    expect(screen.getByLabelText(/每 5 秒刷新/).getAttribute('data-token-throughput')).toBe('all')
+    expect(screen.getByLabelText(/每 1 秒刷新/).getAttribute('data-token-throughput')).toBe('all')
   })
 
   it('keeps a labeled rail indicator and explicit sampling state', () => {
@@ -90,6 +90,6 @@ describe('Token throughput indicators', () => {
     expect(rail.getAttribute('role')).toBe('status')
     expect(rail.getAttribute('aria-live')).toBe('off')
     expect(rail.tabIndex).toBe(0)
-    expect(screen.queryByText('全部会话速率')).toBeNull()
+    expect(screen.queryByText('全部会话均值')).toBeNull()
   })
 })

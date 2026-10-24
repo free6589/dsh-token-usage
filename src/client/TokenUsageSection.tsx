@@ -203,6 +203,22 @@ function Metric({ label, value }: { label: string; value: number | string }): Re
   )
 }
 
+/** One decision-bearing number with its unit, note, and exact-value tooltip. */
+function DecisionItem({ label, value, note, title }: {
+  label: string
+  value: string
+  note: string
+  title?: string | undefined
+}): ReactNode {
+  return (
+    <div className={css.decision}>
+      <span>{label}</span>
+      <strong title={title ?? value}>{value}</strong>
+      <small>{note}</small>
+    </div>
+  )
+}
+
 /** Group related trajectory facts without promoting every number to a large card. */
 function AnalysisSummaryGroup({ title, rows }: {
   title: string
@@ -1226,6 +1242,24 @@ export function TokenUsageSection({
 
   const costSummary = useMemo(() => tokenUsageCostSummary(data.models), [data.models])
   const priceCoverage = formatCoveragePercent(costSummary.coveredTokens, costSummary.totalTokens)
+  const decision = useMemo(() => {
+    const used = totalTokens(periodInsight(data.operationalDays, 30).usage)
+    let priciest: { route: string, outputPerMillion: number } | undefined
+    for (const model of costSummary.models) {
+      const rate = model.rate
+      if (rate === undefined) continue
+      if (priciest === undefined || rate.outputPerMillion > priciest.outputPerMillion) {
+        priciest = { route: routeLabel(model), outputPerMillion: rate.outputPerMillion }
+      }
+    }
+    return {
+      used30: used,
+      perMillion: costSummary.coveredTokens === 0
+        ? undefined
+        : costSummary.totalCostUSD / costSummary.coveredTokens * 1_000_000,
+      priciest,
+    }
+  }, [costSummary, data.operationalDays])
   const sortedModels = useMemo(
     () => sortedModelHotspots(costSummary.models, modelSort),
     [costSummary.models, modelSort],
@@ -1271,6 +1305,44 @@ export function TokenUsageSection({
 
       {data.sessions.length === 0 ? <p className={css.status}>{t('empty')}</p> : (
         <>
+          <section className={css.decisions} aria-labelledby="token-usage-decisions">
+            <header>
+              <h3 id="token-usage-decisions">{t('decisionTitle')}</h3>
+              <p>{t('decisionIntro')}</p>
+            </header>
+            <div className={css.decisionGrid}>
+              <DecisionItem
+                label={t('decisionBudgetRemaining')}
+                value={budget.budget > 0
+                  ? formatCompactTokens(Math.max(0, budget.budget - decision.used30))
+                  : t('decisionBudgetUnset')}
+                note={budget.budget > 0
+                  ? t('decisionBudgetUsed', {
+                    percent: formatPercent(decision.used30 / budget.budget * 100),
+                    budget: formatTokens(budget.budget),
+                  })
+                  : t('decisionBudgetUnsetHint')}
+                title={formatTokens(Math.max(0, budget.budget - decision.used30))}
+              />
+              <DecisionItem
+                label={t('decisionCostPerMillion')}
+                value={decision.perMillion === undefined ? '—' : formatUSD(decision.perMillion)}
+                note={t('decisionCostPerMillionHint')}
+              />
+              <DecisionItem
+                label={t('decisionPriciestRoute')}
+                value={decision.priciest === undefined ? '—' : formatUSD(decision.priciest.outputPerMillion)}
+                note={decision.priciest === undefined
+                  ? t('decisionPriciestRouteUnknown')
+                  : t('decisionPriciestRouteHint', { route: decision.priciest.route })}
+              />
+              <DecisionItem
+                label={t('decisionCacheHitValue')}
+                value={cacheHit}
+                note={t('decisionCacheHitHint')}
+              />
+            </div>
+          </section>
           <div className={css.metrics}>
             <Metric label={t('totalTokens')} value={totalTokens(data.usage)} />
             <Metric label={t('inputTokens')} value={billedInput} />

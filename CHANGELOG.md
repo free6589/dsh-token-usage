@@ -4,6 +4,12 @@ This changelog records verifiable changes represented in the repository history.
 
 ## [Unreleased]
 
+### Settled-average throughput and a decision-first dashboard
+
+- Publish the throughput indicators as a settled average instead of an instantaneous rate: sample every second, average the `outputTokens` delta over a 30-second window, divide by `max(elapsed, 10s)` so one lump-sum settlement cannot read as a spike, and blend consecutive readings with a 5-second exponential time constant. DSH 0.2.1 reports usage once per settled attempt, so a short-window instantaneous rate could only alternate between zero and a burst.
+- Label both indicators and their tooltips as an average ("结算均值", "not an instantaneous rate") so the number is no longer read as per-Token decode speed.
+- Lead the dashboard with a decision summary — 30-day budget headroom, weighted cost per million tokens, priciest route output price, cache-hit share — above the accounting metrics.
+
 ### DSH 0.2.1 compatibility
 
 - Port the plugin to DSH 0.2.1-rc.2: durable state now lives in a `token-usage` storage domain (`ctx.storageDomain` + zod schemas) because per-plugin settings namespaces (`ctx.settings.register`) no longer exist; budgets and the workbench snapshot are read synchronously and written asynchronously through that domain.

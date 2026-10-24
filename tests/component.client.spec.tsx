@@ -501,6 +501,47 @@ describe('TokenUsageSection', () => {
     expect(screen.getByRole('link', { name: '查看官方费率来源' }).getAttribute('href')).toBe('https://developers.openai.com/api/docs/pricing')
   })
 
+  it('leads with the four decision numbers instead of the ledger', () => {
+    const priced = summary({
+      id: 'session-decisions' as SessionSummary['id'],
+      displayTitle: '决策会话',
+      updatedAt: 4_000,
+      projectionValues: {
+        tokenUsageRecorder: {
+          assistantRequests: 2,
+          compactionRequests: 0,
+          compactionUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          usage: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 500_000, cacheWriteTokens: 0 },
+          models: [{
+            provider: 'openai', model: 'gpt-5-mini', assistantRequests: 1, compactionRequests: 0,
+            usage: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 500_000, cacheWriteTokens: 0 },
+          }],
+          days: [],
+          modelDays: [],
+        },
+      },
+    })
+    render(<TokenUsageSection {...{
+      ...props([priced]),
+      useBudget: selector => selector({ status: 'ready', budget: 1_000_000, routeBudgets: [] }),
+    }} />)
+
+    // The decision strip precedes the accounting metrics in document order.
+    const heading = screen.getByRole('heading', { name: '决策要点' })
+    const metrics = screen.getAllByText('总 Token')[0] as HTMLElement
+    expect(heading.compareDocumentPosition(metrics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('决策要点').parentElement?.textContent).toContain('能改变行为的量')
+
+    // Budget headroom, weighted unit cost, priciest route, and cache share.
+    expect(screen.getByText('30 日预算剩余').parentElement?.querySelector('strong')?.textContent).toBe('1M')
+    expect(screen.getByText(/已用 0% · 上限 1,000,000/)).toBeTruthy()
+    expect(screen.getByText('每百万 token 成本').parentElement?.querySelector('strong')?.textContent).toMatch(/^\$/)
+    const priciest = screen.getByText('最贵路由输出价').parentElement
+    expect(priciest?.querySelector('strong')?.textContent).toMatch(/^\$/)
+    expect(priciest?.textContent).toContain('gpt-5-mini')
+    expect(screen.getByText('缓存命中率').parentElement?.querySelector('strong')?.textContent).toBe('33%')
+  })
+
   it('renders daily Token activity as a heatmap cell', () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 7, 14, 12))
     render(<TokenUsageSection {...props([activity])} />)

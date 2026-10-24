@@ -438,12 +438,23 @@ a plugin restart would drop the dashboard's in-flight RPC and re-warm every sess
 live in the storage domain, which is written asynchronously without restarting anything. Deployment-level defaults are
 still expressible through the profile patch if a future release wants them; the domain is the source of truth today.
 
-### Known gap: live (pre-settlement) throughput
+### Live (pre-settlement) throughput: deliberately not wired
 
 `agent/assistant-stream` frames are the only non-persisted live usage source (row 3), and they are host-side. The
-plugin does not subscribe to them yet, so the throughput indicators advance when a call settles rather than while it
-streams. Wiring them means a host subscription that forwards usage frames over the existing RPC channel; it is a
-follow-up, not a 0.2.1 blocker, and the numbers shown are always settled, Provider-confirmed values.
+plugin does not subscribe to them, and the indicators therefore advance when a call settles.
+
+That is a deliberate product decision, not an omission. Once usage arrives in one lump per settled attempt, an
+instantaneous rate can only alternate between zero (between calls) and a spike (at settlement) — with a 10-second
+window a single 3,000-Token reply read as 1.2K tok/s. The published number is consequently a **settled average**:
+sample every second, average the `outputTokens` delta over a 30-second window, divide by `max(elapsed, 10s)`, and
+blend consecutive readings with a 5-second exponential time constant. The value is stable enough to serve as a
+baseline, which is the only thing a throughput number can be used for (spotting a rate collapse), and the honest
+label is "结算均值", not "瞬时速度".
+
+Wiring `agent/assistant-stream` would add one real capability: an **activity indicator** for long tool calls and
+reasoning phases where no text streams, so a stalled turn can be told apart from a busy one. If that is added, it
+should publish "last usage frame at …" plus a coarse active/idle state at a 1-second throttle — not a per-second
+rate, which would reintroduce exactly the noise this release removes.
 
 ### Install (profile is read-only inside a session)
 
