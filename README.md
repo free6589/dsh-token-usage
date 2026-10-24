@@ -112,6 +112,23 @@ dsh plugin --profile web add github:LeemanCheung/dsh-token-usage
 dsh plugin --profile web add ./dsh-token-usage
 ```
 
+从自己的 fork 直接装（GitHub 源，装完即为该 commit 的快照；`lib/` 已入库，无需在目标机重新构建）：
+
+```bash
+dsh plugin --profile web add github:free6589/dsh-token-usage          # 跟随默认分支
+dsh plugin --profile web add github:free6589/dsh-token-usage#<sha>    # 钉死 commit，可复现
+```
+
+`dsh plugin add` 只是 pnpm 的透传，**不会**把包加进 profile 的 `dsh.profile.bundles`；装完必须再补一条注册，否则插件不会被挂载：
+
+```bash
+d="$DSH_PROFILE_DIR"   # 例如 /home/fish/dsh-layerfs/profiles/web
+jq '.dsh.profile.bundles += ["dsh-token-usage"] | .dsh.profile.bundles |= unique' \
+  "$d/package.json" > "$d/package.json.new" && mv "$d/package.json.new" "$d/package.json"
+```
+
+重启 profile 后生效。仓库内 `scripts/install-local.sh` 会把「装包 + 注册 bundle + 时间戳备份」一次做完。
+
 </details>
 
 ### 兼容性、存储与卸载

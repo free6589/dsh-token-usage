@@ -32,14 +32,15 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "assets",
-    "docs/compatibility-0.1.2-rc.1.md",
-    "lib",
-    "src",
-    "cordis.patch.yml",
     "README.md",
+    "assets",
+    "cordis.patch.yml",
+    "docs/adaptation-0.2.1.md",
+    "docs/compatibility-0.1.2-rc.1.md",
+    "docs/workbench-acceptance.md",
     "docs/workbench.md",
-    "docs/workbench-acceptance.md"
+    "lib",
+    "src"
   ],
   "dsh": {
     "pluginType": "feature",
