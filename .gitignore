@@ -1,4 +1,7 @@
+.devdeps/
+.link.mjs
 node_modules/
 *.tgz
 *.tsbuildinfo
 .playwright-cli/
+.agent-teams/

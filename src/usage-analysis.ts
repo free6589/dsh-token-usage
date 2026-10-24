@@ -8,6 +8,7 @@ import {
   type TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import { AnalysisProgressTracker, type AnalysisProgressReporter } from './analysis-progress.ts'
+import { TOKEN_USAGE_MESSAGE_SOURCE } from './message-source.ts'
 import type {
   DailyTokenUsageRecord,
   ModelTokenUsageRecord,
@@ -140,7 +141,7 @@ export async function analyzeTokenUsage(
       type: 'text',
       text: `Aggregate Token usage evidence (no session identifiers or content):\n${JSON.stringify(evidence)}`,
     }],
-    source: { kind: 'plugin', plugin: 'dsh-token-usage' },
+    source: TOKEN_USAGE_MESSAGE_SOURCE,
   })]
   const preparedCall = await ctx.llm.prepareCall({
     provider: selection.provider,

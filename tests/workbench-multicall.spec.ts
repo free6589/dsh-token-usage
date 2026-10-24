@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { createWorkbenchHost } from '../src/workbench/host.ts'
 import { stateSchema } from '../src/workbench/schema.ts'
+import { storeFrom } from './store.fixture.ts'
 
 function fixture() {
   let data = ''
-  const host = createWorkbenchHost({ settings: { register: () => ({ get: () => ({ data }), update: async (value: { data: string }) => { data = value.data } }) }, logger: { warn: () => {} } } as unknown as Context)
+  const host = createWorkbenchHost({ logger: { warn: () => {} } } as unknown as Context, storeFrom({ read: () => data, write: async value => { data = value } }))
   const llm = { prepareCall: async () => ({ stream: async function* (reported = true) {
     if (reported) { yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 2 } }; yield { type: 'usage', usage: { inputTokens: 20, outputTokens: 5 } } }
   } }) } as unknown as Context['llm']

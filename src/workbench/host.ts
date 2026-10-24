@@ -1,18 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import settingsSchema from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-llm'
 import { z } from 'zod'
+import type { TokenUsageStore } from '../store.ts'
 import { MAX_STATE_CHARS, migrateState, boundedParse, bucketsSchema, configRequestSchema, emptyState, identifier, snapshotRequestSchema, stamp, stateSchema, type LedgerEntry, type WorkbenchState } from './schema.ts'
 import { buildSnapshot, pageSnapshot, type SnapshotArchive } from './snapshot.ts'
 import { add, zero, quote, sumQuotes, total, type Quote } from './prices.ts'
 
 import { ensurePriceHistory, revisePrices, priceDigest } from './price-history.ts'
 
-const storageSchema = settingsSchema.object({ data: settingsSchema.string().max(MAX_STATE_CHARS).default('') })
 const receiptRequest = z.object({ sessionId: identifier, revision: identifier, currency: z.enum(['USD', 'CNY']), mode: z.enum(['historical-reference', 'revaluation']), at: stamp, priceRevision: z.number().int().nonnegative().optional() }).strict()
 const rollbackRequest = z.object({ revision: z.number().int().nonnegative(), targetPriceRevision: z.number().int().nonnegative(), confirm: z.literal('restore-price-revision') }).strict()
 const emptyRequest = z.object({}).strict()
@@ -30,13 +28,16 @@ function pruneRequestKeys(state: WorkbenchState, now = Date.now()): void {
   }
 }
 
-/** Bounded durable store; all mutations are serialized and config changes use a revision precondition. */
-export function createWorkbenchHost(ctx: Context) {
-  const storage = ctx.settings.register('token-usage-workbench', storageSchema)
+/**
+ * Bounded durable store; all mutations are serialized and config changes use a
+ * revision precondition. `store` supplies the domain-backed workbench record
+ * (DSH 0.2.1 has no per-plugin settings namespace to hold it).
+ */
+export function createWorkbenchHost(ctx: Context, store: TokenUsageStore) {
   let state: WorkbenchState
   let damaged = false, storageFailed = false, active = 0, startupWritePending = false
   try {
-    const raw = storage.get().data
+    const raw = store.workbench()
     state = raw ? migrateState(JSON.parse(raw)) : emptyState()
     ensurePriceHistory(state)
     state.ledgerStartedAt ??= state.ledger.map(entry => entry.startedAt).sort()[0] ?? null
@@ -75,7 +76,7 @@ export function createWorkbenchHost(ctx: Context) {
       pruneRequestKeys(draft)
       boundedParse(stateSchema, draft)
       if (onlyIfChanged && !startupWritePending && JSON.stringify(draft) === JSON.stringify(state)) return
-      await storage.update({ data: JSON.stringify(draft) })
+      await store.setWorkbench(JSON.stringify(draft))
       state = draft; storageFailed = false; startupWritePending = false
     })
     queue = run.catch(() => {})

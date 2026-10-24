@@ -236,6 +236,17 @@ function assistantRoute(event: SessionEvent, fallback: Route | null): Route {
   return fallback ?? { provider: 'unknown', model: 'unknown' }
 }
 
+/** Last billed usage sample carried by a settled attempt's stream, if it reported one. */
+function attemptUsage(stream: readonly { type: string, chunk?: { type: string, usage?: TokenUsage } }[]): TokenUsage | undefined {
+  for (let index = stream.length - 1; index >= 0; index--) {
+    const record = stream[index]
+    if (record?.type !== 'chunk') continue
+    if (record.chunk?.type !== 'usage' || record.chunk.usage === undefined) continue
+    return record.chunk.usage
+  }
+  return undefined
+}
+
 /** Total billed tokens across the four disjoint buckets. */
 function totalTokens(usage: TokenUsageBuckets): number {
   return usage.uncachedInputTokens
@@ -338,14 +349,32 @@ export const tokenUsageRecorderProjectionDefinition = {
     let turn: number
     let step: number
     let rawUsage: TokenUsage
-    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
-      turn = event.data.turn
-      step = event.data.step
-      rawUsage = event.data.chunk.usage
-    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
+    if (event.type === 'assistant/message' && event.data.usage !== undefined) {
       turn = event.data.turn
       step = event.data.step
       rawUsage = event.data.usage
+    } else if (event.type === 'assistant/attempt') {
+      // An attempt that settled without a surface message keeps its stream, so a
+      // failed, retried or cancelled call still reports the usage it was billed.
+      const sampled = attemptUsage(event.data.stream)
+      if (sampled === undefined) return state
+      turn = event.data.turn
+      step = event.data.step
+      rawUsage = sampled
+    } else if ((event.type as string) === 'assistant/chunk') {
+      // Tolerated input, not a producer: DSH 0.2.1 stopped persisting streaming
+      // chunks, so this only fires for a log written by an earlier release.
+      const legacy = event.data as unknown as {
+        turn?: number
+        step?: number
+        chunk?: { type?: string, usage?: TokenUsage }
+      }
+      if (legacy.chunk?.type !== 'usage' || legacy.chunk.usage === undefined) return state
+      // An unattributed legacy sample still counts toward the totals; -1 never
+      // matches a real turn/step, so it simply has no predecessor to replace.
+      turn = legacy.turn ?? -1
+      step = legacy.step ?? -1
+      rawUsage = legacy.chunk.usage
     } else {
       return state
     }

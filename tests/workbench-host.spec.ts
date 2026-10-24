@@ -4,16 +4,17 @@ import { createWorkbenchHost } from '../src/workbench/host.ts'
 import { emptyState, stateSchema, snapshotSchema, type WorkbenchState } from '../src/workbench/schema.ts'
 import { total } from '../src/workbench/prices.ts'
 import { fixtureSessionId, workbenchEvents } from './workbench.fixture.ts'
+import { fakeStore } from './store.fixture.ts'
 
 export function hostFixture(initial = '', failWrites = false) {
-  let stored = initial
-  const storage = { get: () => ({ data: stored }), update: vi.fn(async (patch: { data: string }) => { if (failWrites) throw new Error('disk unavailable'); stored = patch.data }) }
+  const { store, stored, setWorkbench } = fakeStore(initial, failWrites)
+  const storage = { get: () => ({ data: stored() }), update: setWorkbench }
   const context = {
-    settings: { register: vi.fn(() => storage) }, logger: { warn: vi.fn() },
+    logger: { warn: vi.fn() },
     sessions: { get: vi.fn(() => ({ snapshotEvents: () => workbenchEvents() })) },
     sessionQuery: { readSession: vi.fn(async () => ({ events: workbenchEvents() })) },
   } as unknown as Context
-  return { host: createWorkbenchHost(context), context, storage, stored: () => stored }
+  return { host: createWorkbenchHost(context, store), context, storage, stored }
 }
 const signal = () => new AbortController().signal
 async function read(host: ReturnType<typeof createWorkbenchHost>): Promise<WorkbenchState> {

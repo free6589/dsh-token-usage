@@ -1,27 +1,24 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply, inject } from '../src/index.ts'
+import { fakeStorageDomain } from './store.fixture.ts'
+
+/** Settles the auxiliary plugin's asynchronous activation (it opens the durable domain first). */
+const pendingApplies: Promise<unknown>[] = []
+async function applyHost(ctx: Context): Promise<void> {
+  apply(ctx)
+  await Promise.all(pendingApplies)
+}
 
 function rpcServices() {
-  const settings = {
-    rolling30DayBudget: 0,
-    routeBudgets: [] as Array<{ provider: string; model: string; rolling30DayBudget: number }>,
-  }
-  const budgetUpdate = vi.fn(async (next: Partial<typeof settings>) => {
-    if (next.rolling30DayBudget !== undefined) settings.rolling30DayBudget = next.rolling30DayBudget
-    if (next.routeBudgets !== undefined) settings.routeBudgets = next.routeBudgets
-  })
+  const storage = fakeStorageDomain()
   return {
-    budgetUpdate,
-    settings: {
-      register: vi.fn(() => ({
-        get: () => settings,
-        update: budgetUpdate,
-      })),
-    },
+    storage,
+    budgetUpdate: storage.domain.global.set,
     connection: { rpc: { handle: vi.fn(() => async () => {}) } },
-    plugin: vi.fn(function (this: Context, plugin: { apply(ctx: Context): void }) {
-      plugin.apply(this)
+    storageDomain: storage.service,
+    plugin: vi.fn(function (this: Context, plugin: { apply(ctx: Context): unknown }) {
+      pendingApplies.push(Promise.resolve(plugin.apply(this)))
       return {}
     }),
     get: vi.fn(function (this: Record<string, unknown>, service: string) { return this[service] }),
@@ -45,7 +42,7 @@ describe('host apply', () => {
       effect: vi.fn((install: () => unknown) => install()),
     } as unknown as Context
 
-    apply(ctx)
+    await applyHost(ctx)
 
     const handler = rpc.connection.rpc.handle.mock.calls[0]?.[1] as (
       endpoint: string,
@@ -77,8 +74,9 @@ describe('host apply', () => {
         routeBudgets: [{ provider: 'deepseek', model: 'chat', rolling30DayBudget: 1_000 }],
       },
     })
-    expect(rpc.budgetUpdate).toHaveBeenNthCalledWith(1, { rolling30DayBudget: 250 })
+    expect(rpc.budgetUpdate).toHaveBeenNthCalledWith(1, { rolling30DayBudget: 250, routeBudgets: [] })
     expect(rpc.budgetUpdate).toHaveBeenNthCalledWith(2, {
+      rolling30DayBudget: 250,
       routeBudgets: [{ provider: 'deepseek', model: 'chat', rolling30DayBudget: 1_000 }],
     })
     expect(rejected).toMatchObject({ ok: false, error: { code: 'settings-rejected' } })
@@ -109,7 +107,7 @@ describe('host apply', () => {
       logger: { warn: vi.fn() },
       effect: vi.fn((install: () => unknown) => install()),
     } as unknown as Context
-    apply(ctx)
+    await applyHost(ctx)
     const signal = new AbortController().signal
     const model = { provider: 'provider', model: 'model' }
     const buckets = { uncachedInputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
@@ -162,7 +160,7 @@ describe('host apply', () => {
       }),
     } as unknown as Context
 
-    apply(ctx)
+    await applyHost(ctx)
 
     expect(register).toHaveBeenCalledTimes(1)
     await vi.waitFor(() => {
@@ -202,7 +200,7 @@ describe('host apply', () => {
       }),
     } as unknown as Context
 
-    apply(ctx)
+    await applyHost(ctx)
     await vi.waitFor(() => { expect(readSession).toHaveBeenCalledWith('cold') })
     attached = live
     releaseCold?.()
@@ -247,7 +245,7 @@ describe('host apply', () => {
       effect: vi.fn((install: () => unknown) => install()),
     } as unknown as Context
 
-    apply(ctx)
+    await applyHost(ctx)
     const result = await handler?.(
       'trajectory/analyze',
       { sessionId: 'session-a', model: { provider: 'configured', model: 'audit' }, language: 'zh' },
@@ -303,7 +301,7 @@ describe('host apply', () => {
       effect: vi.fn((install: () => unknown) => install()),
     } as unknown as Context
 
-    apply(ctx)
+    await applyHost(ctx)
     const signal = new AbortController().signal
     const catalog = await handler?.('analysis/models', {}, signal) as { ok: boolean; value?: { models: unknown[]; default?: unknown } }
     const result = await handler?.('usage/analyze', {
@@ -373,7 +371,7 @@ describe('host apply', () => {
         logger: { warn: vi.fn() },
         effect: vi.fn((install: () => unknown) => install()),
       } as unknown as Context
-      apply(ctx)
+      await applyHost(ctx)
 
       const result = handler?.('analysis/models', {}, new AbortController().signal) as Promise<{
         ok: boolean
@@ -440,7 +438,7 @@ describe('host apply', () => {
         logger: { warn: vi.fn() },
         effect: vi.fn((install: () => unknown) => install()),
       } as unknown as Context
-      apply(ctx)
+      await applyHost(ctx)
 
       const first = handler?.('analysis/models', {}, new AbortController().signal)
       await vi.advanceTimersByTimeAsync(5_000)
@@ -489,7 +487,7 @@ describe('host apply', () => {
         return vi.fn()
       }),
     } as unknown as Context
-    apply(ctx)
+    await applyHost(ctx)
 
     const pending = handler?.('analysis/models', {}, new AbortController().signal)
     await vi.waitFor(() => { expect(listModels).toHaveBeenCalledWith('provider') })
@@ -527,7 +525,7 @@ describe('host apply', () => {
         return vi.fn()
       }),
     } as unknown as Context
-    apply(ctx)
+    await applyHost(ctx)
 
     const pending = handler?.('analysis/models', {}, new AbortController().signal)
 
@@ -562,7 +560,7 @@ describe('host apply', () => {
         return vi.fn()
       }),
     } as unknown as Context
-    apply(ctx)
+    await applyHost(ctx)
 
     const pending = handler?.('analysis/models', {}, new AbortController().signal)
     await vi.waitFor(() => {
@@ -608,7 +606,7 @@ describe('host apply', () => {
         return vi.fn()
       }),
     } as unknown as Context
-    apply(ctx)
+    await applyHost(ctx)
 
     const pending = handler?.('usage/analyze', {
       model: { provider: 'provider', model: 'model' },
@@ -634,7 +632,7 @@ describe('host apply', () => {
   })
 
   it('cancels and drains history warming when its fiber is disposed', async () => {
-    let cleanup: (() => Promise<void>) | undefined
+    const disposers: Array<() => Promise<void>> = []
     let observedSignal: AbortSignal | undefined
     const listSessions = vi.fn((signal?: AbortSignal) => {
       observedSignal = signal
@@ -653,18 +651,19 @@ describe('host apply', () => {
       sessionProjectionCache: { write: vi.fn(), coldSnapshot: vi.fn() },
       logger: { warn: vi.fn() },
       effect: vi.fn((install: () => () => Promise<void>) => {
-        cleanup = install()
+        const dispose = install()
+        if (typeof dispose === 'function') disposers.push(dispose)
         return vi.fn()
       }),
     } as unknown as Context
 
-    apply(ctx)
+    await applyHost(ctx)
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(cleanup).toBeTypeOf('function')
+    expect(disposers.length).toBeGreaterThan(0)
     expect(observedSignal).toBeInstanceOf(AbortSignal)
-    await cleanup?.()
+    for (const dispose of disposers.reverse()) await dispose()
     expect(observedSignal?.aborted).toBe(true)
   })
 })

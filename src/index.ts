@@ -1,7 +1,6 @@
 /** Host projection and history warm-up for persistent Token usage records. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionRecord } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -9,12 +8,14 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
-import type {} from '@deepseek-ai/dsh-settings'
 import {
+  MAX_ROUTE_BUDGETS,
+  RouteBudgetSchema,
   TOKEN_USAGE_SETTINGS_NAMESPACE,
   type TokenUsageBudgetSettings,
   type TokenUsageRouteBudget,
 } from './budget-settings.ts'
+import { openTokenUsageStore, type TokenUsageStore } from './store.ts'
 import { tokenUsageRecorderProjectionDefinition } from './projection.ts'
 import { TOKEN_USAGE_RPC_CHANNEL, TOKEN_USAGE_RPC_ENDPOINT } from './rpc.ts'
 import type { AnalysisProgressReporter, AnalysisProgressUpdate } from './analysis-progress.ts'
@@ -45,21 +46,11 @@ export const inject = [
 /** Budget RPC surface; trajectory-only services are resolved lazily per request. */
 const auxiliaryPlugin = {
   name: 'token-usage-auxiliary',
-  inject: ['settings', 'connection'],
+  inject: ['storageDomain', 'connection'],
   apply: installRpc,
 }
 
 const BUDGET_NAMESPACE = TOKEN_USAGE_SETTINGS_NAMESPACE
-const MAX_ROUTE_BUDGETS = 64
-const RouteBudgetSchema: z<TokenUsageRouteBudget> = z.object({
-  provider: z.string().min(1).max(256),
-  model: z.string().min(1).max(256),
-  rolling30DayBudget: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
-})
-const BudgetSettingsSchema: z<TokenUsageBudgetSettings> = z.object({
-  rolling30DayBudget: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(0),
-  routeBudgets: z.array(RouteBudgetSchema).max(MAX_ROUTE_BUDGETS).default([]),
-})
 
 interface BudgetSettingsPatch {
   rolling30DayBudget?: number
@@ -393,10 +384,10 @@ interface ActiveAnalysisProgress {
 }
 
 /** Expose persistent preferences and explicit configured-model trajectory analysis to the local Web client. */
-function installRpc(ctx: Context): void {
-  const budget = ctx.settings.register(BUDGET_NAMESPACE, BudgetSettingsSchema)
+async function installRpc(ctx: Context): Promise<void> {
+  const store: TokenUsageStore = await openTokenUsageStore(ctx)
   let workbench: ReturnType<typeof createWorkbenchHost> | undefined
-  const getWorkbench = () => workbench ??= createWorkbenchHost(ctx)
+  const getWorkbench = () => workbench ??= createWorkbenchHost(ctx, store)
   const activeProgress = new Map<string, ActiveAnalysisProgress>()
   const withProgress = async <T>(
     progressId: string | undefined,
@@ -452,18 +443,18 @@ function installRpc(ctx: Context): void {
       if (endpoint.startsWith('workbench/')) return getWorkbench().handle(endpoint, payload, operationSignal)
       switch (endpoint) {
       case TOKEN_USAGE_RPC_ENDPOINT.budgetRead:
-        return { ok: true, value: budget.get() }
+        return { ok: true, value: store.budget() }
       case TOKEN_USAGE_RPC_ENDPOINT.budgetWrite: {
         const patch = budgetPatchFrom(payload)
         if (patch === undefined) {
           return budgetError('Budget settings must contain a valid whole-Token global budget or unique exact-route budgets.')
         }
         try {
-          await budget.update(patch)
+          await store.updateBudget(patch)
         } catch (error) {
           return budgetError(error instanceof Error ? error.message : String(error))
         }
-        return { ok: true, value: budget.get() }
+        return { ok: true, value: store.budget() }
       }
       case TOKEN_USAGE_RPC_ENDPOINT.analysisModels: {
         const runtime = analysisRuntime

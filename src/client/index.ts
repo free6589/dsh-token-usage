@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {
   TokenUsageAnalysisInput,
@@ -35,7 +36,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Client services required by the Settings contribution. */
-export const inject = ['slots', 'locale', 'connection', 'sessions']
+export const inject = ['slots', 'locale', 'connection', 'sessions', 'uiWorkspace']
 
 /** Contribute a localized Token usage page to Settings. */
 export function apply(ctx: ClientContext): void {
@@ -83,7 +84,7 @@ export function apply(ctx: ClientContext): void {
       setRouteBudget: (provider: string, model: string, value: number) => budget.setRouteBudget(provider, model, value),
       download: browserDownload,
       saveTrajectoryAnalysis: (analysis: TrajectoryAnalysis) => { trajectoryHistory.save(analysis) },
-      openSession: (sessionId: SessionId) => { ctx.sessions.open(sessionId) },
+      openSession: (sessionId: SessionId) => { ctx.uiWorkspace.openSession(sessionId) },
       listAnalysisModels: (signal: AbortSignal) => requestAnalysisModels(connection, signal),
       analyzeTokenUsage: (
         input: TokenUsageAnalysisInput,

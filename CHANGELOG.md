@@ -4,6 +4,14 @@ This changelog records verifiable changes represented in the repository history.
 
 ## [Unreleased]
 
+### DSH 0.2.1 compatibility
+
+- Port the plugin to DSH 0.2.1-rc.2: durable state now lives in a `token-usage` storage domain (`ctx.storageDomain` + zod schemas) because per-plugin settings namespaces (`ctx.settings.register`) no longer exist; budgets and the workbench snapshot are read synchronously and written asynchronously through that domain.
+- Read assistant usage from the persisted surfaces only: `assistant/message.usage` for a settled call and the usage chunk inside `assistant/attempt.stream` for a failed, retried or cancelled attempt. A legacy `assistant/chunk` event is still folded when an older log carries one, but the plugin no longer produces or expects that event.
+- Declare the plugin's own message-source kind (`token-usage-plugin`) through `MessageSourceMap` module augmentation instead of the removed catch-all `plugin` kind.
+- Open sessions through `ctx.uiWorkspace.openSession` and render `IconDataOutlineRegular`; both replaced `ctx.sessions.open` and `IconDataOutline16`.
+- Build with the 0.2.1 `clientBundle(packageDir, libEntry)` preset and install into a profile with `scripts/install-local.sh`, which skips the read-only `packages/external` bridge automatically.
+
 - Keep client bundles and embedded source maps identical when the pinned Harness lives in a sibling checkout or an externally linked CI directory. Use Rolldown's whitespace-only AST printer with legal comments retained; normalize only dependency source-map labels, without rewriting generated JavaScript text.
 - Reattribute identical final usage to its authoritative UTC day and replay older projection checkpoints without changing total usage or request counts.
 - Keep unattributed fallback identities out of exact-route trend and budget controls; retain existing fallback budgets as removable, unavailable entries.

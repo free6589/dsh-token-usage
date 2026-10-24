@@ -48,7 +48,7 @@ describe('client apply', () => {
     apply(ctx)
     await Promise.resolve()
 
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'sessions'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'sessions', 'uiWorkspace'])
     expect(registerLocale).toHaveBeenCalledTimes(1)
     expect(injectSlot).toHaveBeenCalledWith('sidebar.footer.action', expect.any(Function))
     expect(injectSlot).toHaveBeenCalledWith('settings.section', expect.any(Function))

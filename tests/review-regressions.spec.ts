@@ -5,6 +5,7 @@ import { tokenUsageRecorderProjectionDefinition as projection } from '../src/pro
 import { createWorkbenchHost } from '../src/workbench/host.ts'
 import { observableTotals } from '../src/workbench/reporting.ts'
 import { emptyState, stateSchema, type WorkbenchState } from '../src/workbench/schema.ts'
+import { storeFrom } from './store.fixture.ts'
 
 const now = Date.parse('2026-09-26T12:00:00Z')
 const signal = () => new AbortController().signal
@@ -15,8 +16,9 @@ function fixture(initial: WorkbenchState, failWrites = false) {
     if (failWrites) throw new Error('disk unavailable')
     stored = next.data
   })
-  const ctx = { settings: { register: () => ({ get: () => ({ data: stored }), update }) }, logger: { warn: vi.fn() } } as unknown as Context
-  return { host: createWorkbenchHost(ctx), stored: () => stateSchema.parse(JSON.parse(stored)), update }
+  const ctx = { logger: { warn: vi.fn() } } as unknown as Context
+  const store = storeFrom({ read: () => stored, write: next => update({ data: next }) })
+  return { host: createWorkbenchHost(ctx, store), stored: () => stateSchema.parse(JSON.parse(stored)), update }
 }
 async function read(host: ReturnType<typeof createWorkbenchHost>) {
   const result = await host.handle('workbench/read', {}, signal())
@@ -72,8 +74,8 @@ describe('merged review regressions', () => {
       if (update.mock.calls.length === 1) throw new Error('transient write failure')
       stored = patch.data
     })
-    const ctx = { settings: { register: () => ({ get: () => ({ data: stored }), update }) }, logger: { warn: vi.fn() } } as unknown as Context
-    const host = createWorkbenchHost(ctx)
+    const ctx = { logger: { warn: vi.fn() } } as unknown as Context
+    const host = createWorkbenchHost(ctx, storeFrom({ read: () => stored, write: next => update({ data: next }) }))
     await new Promise(resolve => setTimeout(resolve, 0))
     vi.mocked(Date.now).mockReturnValue(now + 86400000)
     expect((await read(host)).ledger[0]?.endedAt).toBe(new Date(now).toISOString())
@@ -91,8 +93,8 @@ describe('merged review regressions', () => {
       if (update.mock.calls.length === 1) await held
       stored = patch.data
     })
-    const ctx = { settings: { register: () => ({ get: () => ({ data: stored }), update }) }, logger: { warn: vi.fn() } } as unknown as Context
-    const host = createWorkbenchHost(ctx)
+    const ctx = { logger: { warn: vi.fn() } } as unknown as Context
+    const host = createWorkbenchHost(ctx, storeFrom({ read: () => stored, write: next => update({ data: next }) }))
     const configuration = host.handle('workbench/config', { revision: 0, config: { ...initial.config, shareSummary: true } }, signal())
     const reading = read(host)
     await Promise.resolve()

@@ -9,6 +9,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import { isReplacementSurfaceEvent, type SessionEvent, type SessionId } from '@deepseek-ai/dsh-session'
 import { projectTokenUsage } from './projection.ts'
+import { TOKEN_USAGE_MESSAGE_SOURCE } from './message-source.ts'
 import { AnalysisProgressTracker, type AnalysisProgressReporter } from './analysis-progress.ts'
 import type {
   SignedTokenUsageBuckets,
@@ -690,7 +691,7 @@ export async function analyzeTrajectory(
       type: 'text',
       text: evidence.text,
     }],
-    source: { kind: 'plugin', plugin: 'dsh-token-usage' },
+    source: TOKEN_USAGE_MESSAGE_SOURCE,
   })]
   const preparedCall = await ctx.llm.prepareCall({
     provider: selection.provider,

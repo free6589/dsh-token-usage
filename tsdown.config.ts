@@ -9,7 +9,8 @@ const PLUGIN_ID = 'dsh-token-usage'
 const PACKAGE_ROOT = fileURLToPath(new URL('.', import.meta.url))
 const CANONICAL_CSS_PROJECT_ROOT = '/dsh-plugin-build'
 export const CSS_MODULE_PATTERN = `${PLUGIN_ID}_[local]`
-const baseConfig = clientBundle(PLUGIN_ID, ['src/index.ts'])
+// DSH 0.2.1 presets take the package directory first and read its manifest themselves.
+const baseConfig = clientBundle(PACKAGE_ROOT, ['src/index.ts'])
 
 interface BuildHookContext {
   addWatchFile(path: string): void

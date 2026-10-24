@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { IconDataOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDataOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
@@ -91,7 +91,7 @@ export function AllSessionsThroughput({ wide, useThroughput, t }: AllSessionsThr
         title={wide ? label : undefined}
       >
         <span className={css.sidebarIcon} aria-hidden>
-          <IconDataOutline16 size={wide ? 16 : 18} />
+          <IconDataOutlineRegular size={wide ? 16 : 18} />
           <span className={css.signal} />
         </span>
         {wide && (

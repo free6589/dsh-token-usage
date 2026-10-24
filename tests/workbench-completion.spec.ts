@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { emptyState, emptyConfiguration, migrateState, stateSchema, rateCardSchema, type ExperimentRun } from '../src/workbench/schema.ts'
 import { buildSnapshot, pageSnapshot } from '../src/workbench/snapshot.ts'
 import { createWorkbenchHost } from '../src/workbench/host.ts'
+import { storeFrom } from './store.fixture.ts'
 import { priceDigest, revisePrices } from '../src/workbench/price-history.ts'
 import { intervalScenario } from '../src/workbench/scenarios.ts'
 import { budgetFindings, observableTotals } from '../src/workbench/reporting.ts'
@@ -22,8 +23,8 @@ function card(extra: Record<string, unknown> = {}) {
 function host(initial = '', fail = false) {
   let data = initial
   const update = vi.fn(async (next: { data: string }) => { if (fail) throw new Error('unavailable storage'); data = next.data })
-  const ctx = { settings: { register: () => ({ get: () => ({ data }), update }) }, logger: { warn: vi.fn() }, sessions: { get: () => ({ snapshotEvents: () => workbenchEvents() }) } } as unknown as Context
-  const value = createWorkbenchHost(ctx)
+  const ctx = { logger: { warn: vi.fn() }, sessions: { get: () => ({ snapshotEvents: () => workbenchEvents() }) } } as unknown as Context
+  const value = createWorkbenchHost(ctx, storeFrom({ read: () => data, write: next => update({ data: next }) }))
   return { value, data: () => data, update }
 }
 async function read(h: ReturnType<typeof host>['value']) {

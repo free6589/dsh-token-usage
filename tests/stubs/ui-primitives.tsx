@@ -12,7 +12,11 @@ export function Tooltip({ children }: { children: ReactElement }): ReactNode {
   return children
 }
 
-export function IconDataOutline16({ size = 16, className }: { size?: number; className?: string }): ReactNode {
+export function IconDataOutlineRegular({ size = 16, className }: { size?: number; className?: string }): ReactNode {
+  return <svg aria-hidden width={size} height={size} className={className} />
+}
+
+export function IconDataOutlineMedium({ size = 16, className }: { size?: number; className?: string }): ReactNode {
   return <svg aria-hidden width={size} height={size} className={className} />
 }
 

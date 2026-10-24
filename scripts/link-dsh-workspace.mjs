@@ -1,4 +1,6 @@
 import {
+  accessSync,
+  constants,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -32,12 +34,33 @@ function linkPackage(name, source) {
 }
 
 /**
- * DSH 0.1.2 resolves a client preset's production externals from the Harness
+ * DSH resolves a client preset's production externals from the Harness
  * workspace manifest roster. Expose a manifest-only copy under the dedicated
  * packages/external/dsh-token-usage bridge without replacing an unrelated
  * path. Node's Windows glob does not traverse directory junctions here, so a
  * physical one-file directory is required.
+ *
+ * The bridge only makes sense against a writable Harness *checkout*. Against a
+ * published/installed DSH (or a read-only checkout) writing into the install
+ * tree would abort the whole link step, so it is skipped instead.
  */
+function bridgeSkipReason() {
+  if (process.env.DSH_LINK_SKIP_BRIDGE === '1') return 'DSH_LINK_SKIP_BRIDGE=1'
+  const isCheckout =
+    existsSync(join(harnessRoot, 'packages')) || existsSync(join(harnessRoot, 'pnpm-workspace.yaml'))
+  if (!isCheckout) return `${harnessRoot} is an installed DSH release, not a workspace checkout`
+  const writablePaths = [harnessRoot, join(harnessRoot, 'packages'), join(harnessRoot, 'packages', 'external')]
+  for (const path of writablePaths) {
+    if (!existsSync(path)) continue
+    try {
+      accessSync(path, constants.W_OK)
+    } catch {
+      return `${path} is not writable`
+    }
+  }
+  return undefined
+}
+
 function ensurePluginWorkspaceBridge() {
   const source = realpathSync(process.cwd())
   const bridge = join(harnessRoot, 'packages', 'external', 'dsh-token-usage')
@@ -97,7 +120,12 @@ function discoverWorkspacePackages(directory) {
 }
 
 const virtualStore = join(harnessRoot, 'node_modules', '.pnpm')
-ensurePluginWorkspaceBridge()
+const bridgeSkip = bridgeSkipReason()
+if (bridgeSkip) {
+  console.warn(`Skipped packages/external bridge: ${bridgeSkip}`)
+} else {
+  ensurePluginWorkspaceBridge()
+}
 if (existsSync(virtualStore)) replaceLink(join(targetRoot, '.pnpm'), virtualStore)
 mergeInstalledPackages(join(virtualStore, 'node_modules'))
 mergeInstalledPackages(join(harnessRoot, 'node_modules'))

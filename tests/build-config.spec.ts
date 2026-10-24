@@ -16,7 +16,7 @@ const manifest = JSON.parse(readFileSync(resolvePath(root, 'package.json'), 'utf
   dsh?: { client?: { inject?: string[] }; compatibility?: { dshReleases?: Record<string, string> } }
 }
 
-describe('DSH 0.1.2 package contract', () => {
+describe('DSH 0.2.1 package contract', () => {
   it('uses the replacement client services and keeps live compatibility unclaimed', () => {
     expect(manifest.version).toBe('0.5.0')
     expect(manifest.dsh?.client?.inject).not.toContain('@deepseek-ai/dsh-client-runtime')
@@ -25,7 +25,8 @@ describe('DSH 0.1.2 package contract', () => {
       '@deepseek-ai/dsh-client-connection',
       '@deepseek-ai/dsh-client-ui-renderer',
     ]))
-    expect(manifest.dsh?.compatibility?.dshReleases?.['0.1.2-rc.1']).toBe('compatible')
+    expect(manifest.dsh?.compatibility?.dshReleases?.['0.2.1-rc.2']).toBe('compatible')
+    expect(manifest.dsh?.compatibility?.dshReleases?.['0.1.2-rc.1']).toBeUndefined()
   })
 })
 
